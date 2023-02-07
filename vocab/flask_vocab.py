@@ -6,6 +6,7 @@ from a scrambled string)
 
 import flask
 import logging
+from flask import request
 
 # Our modules
 from src.letterbag import LetterBag
@@ -58,17 +59,10 @@ def index():
     return flask.render_template('vocab.html')
 
 
-@app.route("/keep_going")
-def keep_going():
-    """
-    After initial use of index, we keep the same scrambled
-    word and try to get more matches
-    """
-    flask.g.vocab = WORDS.as_list()
-    return flask.render_template('vocab.html')
+#app.route("/keep_going") no longer needed
 
 
-@app.route("/success")
+@app.route("/completed")
 def success():
     return flask.render_template('success.html')
 
@@ -79,12 +73,12 @@ def success():
 #   a JSON request handler
 #######################
 
-@app.route("/_check", methods=["POST"])
+@app.route("/_check")
 def check():
     """
     User has submitted the form with a word ('attempt')
     that should be formed from the jumble and on the
-    vocabulary list.  We respond depending on whether
+    vocabulary list. We respond depending on whether
     the word is on the vocab list (therefore correctly spelled),
     made only from the jumble letters, and not a word they
     already found.
@@ -92,35 +86,51 @@ def check():
     app.logger.debug("Entering check")
 
     # The data we need, from form and from cookie
-    text = flask.request.form["attempt"]
-    jumble = flask.session["jumble"]
-    matches = flask.session.get("matches", [])  # Default to empty list
+    text = request.args.get("text", type=str) # Get the text from the form arguments
+    jumble = flask.session["jumble"] # Get the jumble from the session
+    matches = flask.session.get("matches", [])  # Default to empty list, get the matches from the session
 
     # Is it good?
-    in_jumble = LetterBag(jumble).contains(text)
-    matched = WORDS.has(text)
+    in_jumble = LetterBag(jumble).contains(text) # Check if text can be made from the letters in jumble
+    matched = WORDS.has(text) # Check if text is in the list of words
+
 
     # Respond appropriately
+    """ Most of this checking logic is from minijax.py"""
     if matched and in_jumble and not (text in matches):
-        # Cool, they found a new word
-        matches.append(text)
-        flask.session["matches"] = matches
+        # Check if text is a new word
+        matches.append(text) # Add the new word to the list of matches
+        flask.session["matches"] = matches # Save the updated list of matches in the session
+        sval = {"success_count": CONFIG.SUCCESS_AT_COUNT} # Set the success count using the value from the CONFIG
+        outcome = {"valid_word": True} # Set the outcome as True, indicating that the text is a valid word
+        return flask.jsonify(result=outcome, success=sval)
     elif text in matches:
-        flask.flash("You already found {}".format(text))
+        # Check if text is already in the list of matches
+        sval = {"success_count": CONFIG.SUCCESS_AT_COUNT} # Set the success count using the value from the CONFIG
+        outcome = {"valid_word": False} # Set the outcome as False, indicating that the text is not a new word
+        return flask.jsonify(result=outcome, success=sval)
     elif not matched:
-        flask.flash("{} isn't in the list of words".format(text))
+        # Check if text is in the list of words
+        sval = {"success_count": CONFIG.SUCCESS_AT_COUNT} # Set the success count using the value from the CONFIG
+        outcome = {"valid_word": False} # Set the outcome as False, indicating that the text is not in the list of words
+        return flask.jsonify(result=outcome, success=sval)
     elif not in_jumble:
-        flask.flash(
-            '"{}" can\'t be made from the letters {}'.format(text, jumble))
+        # Check if text can be made from the letters in jumble
+        sval = {"success_count": CONFIG.SUCCESS_AT_COUNT} # Set the success count using the value from the CONFIG
+        outcome = {"valid_word": False} # Set the outcome as False, indicating that the text can't be made from the letters in jumble
+        return flask.jsonify(result=outcome, success=sval)
     else:
-        app.logger.debug("This case shouldn't happen!")
-        assert False  # Raises AssertionError
+        app.logger.debug("This case shouldn't happen!") # Debug statement in case the execution reaches this point
+        assert False  # Raise an AssertionError
 
-    # Choose page:  Solved enough, or keep going?
-    if len(matches) >= flask.session["target_count"]:
-       return flask.redirect(flask.url_for("success"))
-    else:
-       return flask.redirect(flask.url_for("keep_going"))
+    """This was unecessary to have at this point because the change it input reading"""
+    # Choose page: Solved enough, or keep going?
+    # if len(matches) >= flask.session["target_count"]:
+    #    return flask.redirect(flask.url_for("success"))
+    # else:
+    #    return flask.redirect(flask.url_for("keep_going"))
+    # Dont need this, because dynamically refreshed by keystroke
+
 
 
 ###############
